@@ -1,0 +1,77 @@
+version: '3.9'
+
+services:
+  postgre_sql:
+    build:
+      context: .
+      dockerfile: .docker/postgres/Dockerfile
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER?Please set POSTGRES_USER in .env file}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD?Please set POSTGRES_PASSWORD in .env file}
+      - POSTGRES_DB=${POSTGRES_DB?Please set POSTGRES_DB in .env file}
+      - POSTGRES_PORT=${POSTGRES_PORT?Please set POSTGRES_PORT in .env file}
+    volumes:
+      - ./.docker/cache/postgre_sql/:/var/lib/postgresql/data
+    restart: on-failure
+    tty: true
+    networks:
+      internal_network:
+        ipv4_address: 170.15.0.2
+
+  php_fpm:
+    build:
+      context: .
+      dockerfile: .docker/config/php/Dockerfile
+    depends_on:
+      - postgre_sql
+    tty: true
+    restart: on-failure
+    networks:
+      - internal_network
+      - external_network
+    volumes:
+      - webapp_volume:/var/www
+
+  webapp:
+    container_name: webapp
+    build:
+      context: .
+      dockerfile: .docker/config/nginx/Dockerfile
+    depends_on:
+      - php_fpm
+    tty: true
+    restart: on-failure
+    ports:
+      - '${HTTP_PORT?Please set HTTP_PORT in your .env file}:80'
+      - '${HTTPS_PORT?Please set HTTPS_PORT in your .env file}:443'
+    networks:
+      external_network:
+        ipv4_address: 170.25.0.9
+    volumes:
+      - webapp_volume:/var/www
+      - ./.docker/cache/log/nginx/:/var/log/nginx/
+
+volumes:
+  webapp_volume:
+    driver: local
+    driver_opts:
+      type: none
+      device: $PWD/src
+      o: bind
+
+networks:
+  internal_network:
+    name: internal_network
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 170.15.0.0/24
+
+  external_network:
+    name: external_network
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 170.25.0.0/24
